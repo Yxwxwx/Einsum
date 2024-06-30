@@ -13,28 +13,28 @@ template<typename T>
 class NDArray {
 public:
     NDArray(const std::vector<size_t>& shape) : shape(shape) {
-        size_t totalSize = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
-        data.resize(totalSize);
+        size_t total_size = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
+        data.resize(total_size);
     }
 
     T& operator()(const std::vector<size_t>& indices) {
-        return data[calculateIndex(indices)];
+        return data[calculate_index(indices)];
     }
 
     const T& operator()(const std::vector<size_t>& indices) const {
-        return data[calculateIndex(indices)];
+        return data[calculate_index(indices)];
     }
 
-    const std::vector<size_t>& getShape() const {
+    const std::vector<size_t>& get_shape() const {
         return shape;
     }
 
-    std::vector<T>& getData() {
+    std::vector<T>& get_data() {
         return data;
     }
 
     void print() const {
-        printRecursive(0, std::vector<size_t>(), true);
+        print_recursive(0, std::vector<size_t>(), true);
         std::cout << "\n";
     }
 
@@ -42,7 +42,7 @@ private:
     std::vector<T> data;
     std::vector<size_t> shape;
 
-    size_t calculateIndex(const std::vector<size_t>& indices) const {
+    size_t calculate_index(const std::vector<size_t>& indices) const {
         if (indices.size() != shape.size()) {
             throw std::invalid_argument("Number of indices does not match array dimensions");
         }
@@ -58,14 +58,14 @@ private:
         return index;
     }
 
-    void printRecursive(size_t dim, std::vector<size_t> indices, bool isOutermost) const {
+    void print_recursive(size_t dim, std::vector<size_t> indices, bool is_outermost) const {
         if (dim == shape.size()) {
             std::cout << (*this)(indices);
         } else {
             std::cout << "[";
             for (size_t i = 0; i < shape[dim]; ++i) {
                 indices.push_back(i);
-                printRecursive(dim + 1, indices, false);
+                print_recursive(dim + 1, indices, false);
                 indices.pop_back();
                 if (i < shape[dim] - 1) {
                     std::cout << " ";
@@ -76,7 +76,7 @@ private:
     }
 };
 
-std::vector<std::string> parseSubscripts(const std::string& subscripts) {
+std::vector<std::string> parse_subscripts(const std::string& subscripts) {
     std::vector<std::string> result;
     size_t start = 0, end = 0;
     while ((end = subscripts.find(',', start)) != std::string::npos) {
@@ -87,113 +87,107 @@ std::vector<std::string> parseSubscripts(const std::string& subscripts) {
     return result;
 }
 
-std::string currentIndicesToString(const std::map<char, size_t>& currentIndices) {
-    std::ostringstream oss;
-    for (const auto& pair : currentIndices) {
-        oss << pair.first << ":" << pair.second << " ";
-    }
-    return oss.str();
-}
-
 template<typename T>
-void einsumHelper(const std::vector<std::string>& inputSubscripts,
-    const std::string& outputSubscripts,
+void einsum_helper(const std::vector<std::string>& input_subscripts,
+    const std::string& output_subscripts,
     const std::vector<NDArray<T>>& tensors,
-    std::map<char, size_t>& currentIndices,
+    std::map<char, size_t>& current_indices,
     NDArray<T>& result,
-    const std::map<char, size_t>& dimSizes) {
+    const std::map<char, size_t>& dim_sizes) {
 
     std::vector<std::map<char, size_t>::iterator> iterators;
-    for (auto it = currentIndices.begin(); it != currentIndices.end(); ++it) {
+    for (auto it = current_indices.begin(); it != current_indices.end(); ++it) {
         iterators.push_back(it);
     }
 
-    // Calculate the total number of iterations
-    size_t totalIterations = 1;
-    for (const auto& dim : dimSizes) {
-        totalIterations *= dim.second;
+    size_t total_iterations = 1;
+    for (const auto& dim : dim_sizes) {
+        total_iterations *= dim.second;
     }
 
-    #pragma omp parallel for
-    for (size_t iter = 0; iter < totalIterations; ++iter) {
-        std::map<char, size_t> localIndices = currentIndices;
-
-        // Determine the current indices based on the iteration number
-        size_t tempIter = iter;
-        for (int i = iterators.size() - 1; i >= 0; --i) {
-            char currentAxis = iterators[i]->first;
-            size_t size = dimSizes.at(currentAxis);
-            localIndices[currentAxis] = tempIter % size;
-            tempIter /= size;
-        }
-
+    #pragma omp parallel
+    {
+        // Thread-local storage for intermediate results
+        std::map<char, size_t> local_indices;
         T product = 1;
-        for (size_t i = 0; i < tensors.size(); ++i) {
-            std::vector<size_t> indices;
-            for (char c : inputSubscripts[i]) {
-                indices.push_back(localIndices[c]);
+
+        #pragma omp for schedule(static)
+        for (size_t iter = 0; iter < total_iterations; ++iter) {
+            local_indices = current_indices;
+
+            size_t temp_iter = iter;
+            for (int i = iterators.size() - 1; i >= 0; --i) {
+                char current_axis = iterators[i]->first;
+                size_t size = dim_sizes.at(current_axis);
+                local_indices[current_axis] = temp_iter % size;
+                temp_iter /= size;
             }
-            product *= tensors[i](indices);
-        }
+            product = 1;
+            for (size_t i = 0; i < tensors.size(); ++i) {
+                std::vector<size_t> indices;
+                for (char c : input_subscripts[i]) {
+                    indices.push_back(local_indices[c]);
+                }
+                product *= tensors[i](indices);
+            }
 
-        std::vector<size_t> outputIndices;
-        for (char c : outputSubscripts) {
-            outputIndices.push_back(localIndices[c]);
-        }
+            std::vector<size_t> output_indices;
+            for (char c : output_subscripts) {
+                output_indices.push_back(local_indices[c]);
+            }
 
-        #pragma omp critical
-        {
-            result(outputIndices) += product;
+            #pragma omp atomic
+            result(output_indices) += product;
         }
     }
 }
 
 template<typename T>
 NDArray<T> einsum(const std::string& subscripts, const std::vector<NDArray<T>>& tensors) {
-    size_t arrowPos = subscripts.find("->");
-    if (arrowPos == std::string::npos) {
+    size_t arrow_pos = subscripts.find("->");
+    if (arrow_pos == std::string::npos) {
         throw std::invalid_argument("Invalid subscripts string: missing '->'");
     }
 
-    std::string inputSubscriptsStr = subscripts.substr(0, arrowPos);
-    std::string outputSubscripts = subscripts.substr(arrowPos + 2);
+    std::string input_subscripts_str = subscripts.substr(0, arrow_pos);
+    std::string output_subscripts = subscripts.substr(arrow_pos + 2);
 
-    std::vector<std::string> inputSubscripts = parseSubscripts(inputSubscriptsStr);
-    if (inputSubscripts.size() != tensors.size()) {
+    std::vector<std::string> input_subscripts = parse_subscripts(input_subscripts_str);
+    if (input_subscripts.size() != tensors.size()) {
         throw std::invalid_argument("Number of input subscripts does not match number of tensors");
     }
 
-    std::map<char, size_t> dimSizes;
-    for (size_t i = 0; i < inputSubscripts.size(); ++i) {
-        const auto& subscript = inputSubscripts[i];
+    std::map<char, size_t> dim_sizes;
+    for (size_t i = 0; i < input_subscripts.size(); ++i) {
+        const auto& subscript = input_subscripts[i];
         const auto& tensor = tensors[i];
-        if (subscript.size() != tensor.getShape().size()) {
+        if (subscript.size() != tensor.get_shape().size()) {
             throw std::invalid_argument("Subscript does not match tensor dimensions");
         }
         for (size_t j = 0; j < subscript.size(); ++j) {
-            dimSizes[subscript[j]] = tensor.getShape()[j];
+            dim_sizes[subscript[j]] = tensor.get_shape()[j];
         }
     }
 
-    std::vector<size_t> resultShape;
-    for (char c : outputSubscripts) {
-        if (dimSizes.find(c) == dimSizes.end()) {
+    std::vector<size_t> result_shape;
+    for (char c : output_subscripts) {
+        if (dim_sizes.find(c) == dim_sizes.end()) {
             throw std::invalid_argument("Output subscript not found in input subscripts");
         }
-        resultShape.push_back(dimSizes[c]);
+        result_shape.push_back(dim_sizes[c]);
     }
 
-    NDArray<T> result(resultShape);
-    std::fill(result.getData().begin(), result.getData().end(), T(0));
+    NDArray<T> result(result_shape);
+    std::fill(result.get_data().begin(), result.get_data().end(), T(0));
 
-    std::map<char, size_t> currentIndices;
-    for (const auto& subscript : inputSubscripts) {
+    std::map<char, size_t> current_indices;
+    for (const auto& subscript : input_subscripts) {
         for (char c : subscript) {
-            currentIndices[c] = 0;
+            current_indices[c] = 0;
         }
     }
 
-    einsumHelper(inputSubscripts, outputSubscripts, tensors, currentIndices, result, dimSizes);
+    einsum_helper(input_subscripts, output_subscripts, tensors, current_indices, result, dim_sizes);
 
     return result;
 }

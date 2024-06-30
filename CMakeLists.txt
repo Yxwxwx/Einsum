@@ -14,6 +14,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -Wall")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
     endif()
+
+    if(MSCV)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /openmp")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2")
+    endif()
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/einsum.hpp)

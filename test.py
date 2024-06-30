@@ -20,12 +20,8 @@ for r in range(size):
 
 # Perform einsum calculation
 start_einsum = time.time()
-J = np.einsum('pqrs,rs->pq', I, D)
+J = np.einsum('pqrs,rs->pq', I, D, optimize=True)
 end_einsum = time.time()
-
-# Print the result (printing such a large matrix might not be practical, so we just print a part of it)
-print("Result of einsum calculation (first 10x10 block):")
-print(J[:10, :10])
 
 # Calculate time taken for einsum calculation
 duration_einsum = (end_einsum - start_einsum) * 1000  # in milliseconds

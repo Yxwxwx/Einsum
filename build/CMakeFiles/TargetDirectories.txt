@@ -1,3 +1,0 @@
-/Users/sunxinyu/develop/Einsum/build/CMakeFiles/Einsum.dir
-/Users/sunxinyu/develop/Einsum/build/CMakeFiles/edit_cache.dir
-/Users/sunxinyu/develop/Einsum/build/CMakeFiles/rebuild_cache.dir
