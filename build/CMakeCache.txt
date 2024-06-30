@@ -21,10 +21,10 @@ CMAKE_ADDR2LINE:FILEPATH=/opt/homebrew/opt/llvm/bin/llvm-addr2line
 CMAKE_AR:FILEPATH=/usr/bin/ar
 
 //No help, variable specified on the command line.
-CMAKE_BUILD_TYPE:STRING=Debug
+CMAKE_BUILD_TYPE:STRING=Release
 
-//CXX compiler
-CMAKE_CXX_COMPILER:STRING=/opt/homebrew/opt/llvm/bin/clang++
+//No help, variable specified on the command line.
+CMAKE_CXX_COMPILER:FILEPATH=/opt/homebrew/opt/llvm/bin/clang++
 
 //LLVM archiver
 CMAKE_CXX_COMPILER_AR:FILEPATH=/opt/homebrew/Cellar/llvm/18.1.7/bin/llvm-ar

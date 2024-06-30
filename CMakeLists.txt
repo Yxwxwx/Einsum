@@ -12,6 +12,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(UNIX)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
         set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -Wall")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
     endif()
 endif()
 

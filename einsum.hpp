@@ -7,6 +7,7 @@
 #include <functional>
 #include <set>
 #include <sstream>
+#include <omp.h>
 
 template<typename T>
 class NDArray {
@@ -59,11 +60,8 @@ private:
 
     void printRecursive(size_t dim, std::vector<size_t> indices, bool isOutermost) const {
         if (dim == shape.size()) {
-            // Base case: reached the last dimension, print element
             std::cout << (*this)(indices);
-        }
-        else {
-            // Recursive case: print current dimension and recurse deeper
+        } else {
             std::cout << "[";
             for (size_t i = 0; i < shape[dim]; ++i) {
                 indices.push_back(i);
@@ -78,7 +76,6 @@ private:
     }
 };
 
-// New helper function to parse subscript strings
 std::vector<std::string> parseSubscripts(const std::string& subscripts) {
     std::vector<std::string> result;
     size_t start = 0, end = 0;
@@ -104,53 +101,51 @@ void einsumHelper(const std::vector<std::string>& inputSubscripts,
     const std::vector<NDArray<T>>& tensors,
     std::map<char, size_t>& currentIndices,
     NDArray<T>& result,
-    std::set<std::string>& processedIndices) {
+    const std::map<char, size_t>& dimSizes) {
 
-    std::function<void(size_t)> recurse = [&](size_t tensorIndex) {
-        if (tensorIndex == tensors.size()) {
-            std::string indicesStr = currentIndicesToString(currentIndices);
-            if (processedIndices.find(indicesStr) != processedIndices.end()) {
-                return; // Skip if this combination of indices has already been processed
-            }
-            processedIndices.insert(indicesStr);
+    std::vector<std::map<char, size_t>::iterator> iterators;
+    for (auto it = currentIndices.begin(); it != currentIndices.end(); ++it) {
+        iterators.push_back(it);
+    }
 
-            T product = 1;
-            for (size_t i = 0; i < tensors.size(); ++i) {
-                std::vector<size_t> indices;
-                for (char c : inputSubscripts[i]) {
-                    indices.push_back(currentIndices[c]);
-                }
-                product *= tensors[i](indices);
-            }
+    // Calculate the total number of iterations
+    size_t totalIterations = 1;
+    for (const auto& dim : dimSizes) {
+        totalIterations *= dim.second;
+    }
 
-            std::vector<size_t> outputIndices;
-            for (char c : outputSubscripts) {
-                outputIndices.push_back(currentIndices[c]);
-            }
-            result(outputIndices) += product;
-            return;
+    #pragma omp parallel for
+    for (size_t iter = 0; iter < totalIterations; ++iter) {
+        std::map<char, size_t> localIndices = currentIndices;
+
+        // Determine the current indices based on the iteration number
+        size_t tempIter = iter;
+        for (int i = iterators.size() - 1; i >= 0; --i) {
+            char currentAxis = iterators[i]->first;
+            size_t size = dimSizes.at(currentAxis);
+            localIndices[currentAxis] = tempIter % size;
+            tempIter /= size;
         }
 
-        const auto& subscript = inputSubscripts[tensorIndex];
-        const auto& tensor = tensors[tensorIndex];
-
-        std::function<void(size_t)> iterateDimensions = [&](size_t dim) {
-            if (dim == subscript.size()) {
-                recurse(tensorIndex + 1);
-                return;
+        T product = 1;
+        for (size_t i = 0; i < tensors.size(); ++i) {
+            std::vector<size_t> indices;
+            for (char c : inputSubscripts[i]) {
+                indices.push_back(localIndices[c]);
             }
+            product *= tensors[i](indices);
+        }
 
-            char currentAxis = subscript[dim];
-            for (size_t i = 0; i < tensor.getShape()[dim]; ++i) {
-                currentIndices[currentAxis] = i;
-                iterateDimensions(dim + 1);
-            }
-            };
+        std::vector<size_t> outputIndices;
+        for (char c : outputSubscripts) {
+            outputIndices.push_back(localIndices[c]);
+        }
 
-        iterateDimensions(0);
-        };
-
-    recurse(0);
+        #pragma omp critical
+        {
+            result(outputIndices) += product;
+        }
+    }
 }
 
 template<typename T>
@@ -198,9 +193,7 @@ NDArray<T> einsum(const std::string& subscripts, const std::vector<NDArray<T>>& 
         }
     }
 
-    std::set<std::string> processedIndices; // Set to track processed combinations
-
-    einsumHelper(inputSubscripts, outputSubscripts, tensors, currentIndices, result, processedIndices);
+    einsumHelper(inputSubscripts, outputSubscripts, tensors, currentIndices, result, dimSizes);
 
     return result;
 }
