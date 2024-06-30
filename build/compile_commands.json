@@ -1,8 +1,0 @@
-[
-{
-  "directory": "/Users/sunxinyu/develop/accelerate/build",
-  "command": "/opt/homebrew/opt/llvm/bin/clang++ -I/Users/sunxinyu/develop/accelerate/einsum.h -g -std=gnu++17 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX14.4.sdk -o CMakeFiles/Einsum.dir/main.cpp.o -c /Users/sunxinyu/develop/accelerate/main.cpp",
-  "file": "/Users/sunxinyu/develop/accelerate/main.cpp",
-  "output": "CMakeFiles/Einsum.dir/main.cpp.o"
-}
-]

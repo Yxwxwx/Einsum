@@ -5,6 +5,8 @@
 #include <numeric>
 #include <stdexcept>
 #include <functional>
+#include <set>
+#include <sstream>
 
 template<typename T>
 class NDArray {
@@ -30,6 +32,11 @@ public:
         return data;
     }
 
+    void print() const {
+        printRecursive(0, std::vector<size_t>(), true);
+        std::cout << "\n";
+    }
+
 private:
     std::vector<T> data;
     std::vector<size_t> shape;
@@ -49,9 +56,29 @@ private:
         }
         return index;
     }
+
+    void printRecursive(size_t dim, std::vector<size_t> indices, bool isOutermost) const {
+        if (dim == shape.size()) {
+            // Base case: reached the last dimension, print element
+            std::cout << (*this)(indices);
+        }
+        else {
+            // Recursive case: print current dimension and recurse deeper
+            std::cout << "[";
+            for (size_t i = 0; i < shape[dim]; ++i) {
+                indices.push_back(i);
+                printRecursive(dim + 1, indices, false);
+                indices.pop_back();
+                if (i < shape[dim] - 1) {
+                    std::cout << " ";
+                }
+            }
+            std::cout << "]";
+        }
+    }
 };
 
-// 新的辅助函数，用于解析下标字符串
+// New helper function to parse subscript strings
 std::vector<std::string> parseSubscripts(const std::string& subscripts) {
     std::vector<std::string> result;
     size_t start = 0, end = 0;
@@ -63,53 +90,69 @@ std::vector<std::string> parseSubscripts(const std::string& subscripts) {
     return result;
 }
 
+std::string currentIndicesToString(const std::map<char, size_t>& currentIndices) {
+    std::ostringstream oss;
+    for (const auto& pair : currentIndices) {
+        oss << pair.first << ":" << pair.second << " ";
+    }
+    return oss.str();
+}
+
 template<typename T>
 void einsumHelper(const std::vector<std::string>& inputSubscripts,
     const std::string& outputSubscripts,
     const std::vector<NDArray<T>>& tensors,
-    std::vector<size_t>& currentIndices,
+    std::map<char, size_t>& currentIndices,
     NDArray<T>& result,
-    size_t tensorIndex = 0,
-    T currentProduct = T(1)) {
+    std::set<std::string>& processedIndices) {
 
-    if (tensorIndex == tensors.size()) {
-        std::vector<size_t> outputIndices(result.getShape().size(), 0);
-        for (size_t i = 0; i < outputSubscripts.size(); ++i) {
-            char c = outputSubscripts[i];
-            for (size_t j = 0; j < inputSubscripts.size(); ++j) {
-                size_t pos = inputSubscripts[j].find(c);
-                if (pos != std::string::npos) {
-                    outputIndices[i] = currentIndices[j * inputSubscripts[j].size() + pos];
-                    break;
-                }
+    std::function<void(size_t)> recurse = [&](size_t tensorIndex) {
+        if (tensorIndex == tensors.size()) {
+            std::string indicesStr = currentIndicesToString(currentIndices);
+            if (processedIndices.find(indicesStr) != processedIndices.end()) {
+                return; // Skip if this combination of indices has already been processed
             }
-        }
-        result(outputIndices) += currentProduct;
-        return;
-    }
+            processedIndices.insert(indicesStr);
 
-    const auto& tensor = tensors[tensorIndex];
-    const auto& subscript = inputSubscripts[tensorIndex];
-    std::vector<size_t> indices(subscript.size());
+            T product = 1;
+            for (size_t i = 0; i < tensors.size(); ++i) {
+                std::vector<size_t> indices;
+                for (char c : inputSubscripts[i]) {
+                    indices.push_back(currentIndices[c]);
+                }
+                product *= tensors[i](indices);
+            }
 
-    std::function<void(size_t)> recurse = [&](size_t dim) {
-        if (dim == subscript.size()) {
-            T value = tensor(indices);
-            einsumHelper(inputSubscripts, outputSubscripts, tensors, currentIndices, result,
-                tensorIndex + 1, currentProduct * value);
+            std::vector<size_t> outputIndices;
+            for (char c : outputSubscripts) {
+                outputIndices.push_back(currentIndices[c]);
+            }
+            result(outputIndices) += product;
             return;
         }
-        for (size_t i = 0; i < tensor.getShape()[dim]; ++i) {
-            indices[dim] = i;
-            currentIndices[tensorIndex * subscript.size() + dim] = i;
-            recurse(dim + 1);
-        }
+
+        const auto& subscript = inputSubscripts[tensorIndex];
+        const auto& tensor = tensors[tensorIndex];
+
+        std::function<void(size_t)> iterateDimensions = [&](size_t dim) {
+            if (dim == subscript.size()) {
+                recurse(tensorIndex + 1);
+                return;
+            }
+
+            char currentAxis = subscript[dim];
+            for (size_t i = 0; i < tensor.getShape()[dim]; ++i) {
+                currentIndices[currentAxis] = i;
+                iterateDimensions(dim + 1);
+            }
+            };
+
+        iterateDimensions(0);
         };
 
     recurse(0);
 }
 
-// 修改后的einsum函数
 template<typename T>
 NDArray<T> einsum(const std::string& subscripts, const std::vector<NDArray<T>>& tensors) {
     size_t arrowPos = subscripts.find("->");
@@ -147,10 +190,17 @@ NDArray<T> einsum(const std::string& subscripts, const std::vector<NDArray<T>>& 
 
     NDArray<T> result(resultShape);
     std::fill(result.getData().begin(), result.getData().end(), T(0));
-    std::vector<size_t> currentIndices(std::accumulate(inputSubscripts.begin(), inputSubscripts.end(), 0,
-        [](size_t sum, const std::string& s) { return sum + s.size(); }));
 
-    einsumHelper(inputSubscripts, outputSubscripts, tensors, currentIndices, result);
+    std::map<char, size_t> currentIndices;
+    for (const auto& subscript : inputSubscripts) {
+        for (char c : subscript) {
+            currentIndices[c] = 0;
+        }
+    }
+
+    std::set<std::string> processedIndices; // Set to track processed combinations
+
+    einsumHelper(inputSubscripts, outputSubscripts, tensors, currentIndices, result, processedIndices);
+
     return result;
 }
-

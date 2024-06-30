@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.20)
 
 # 设置项目名称和语言
 project(Einsum LANGUAGES CXX)
@@ -15,7 +15,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     endif()
 endif()
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/einsum.h)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/einsum.hpp)
 
 # 添加可执行文件
 add_executable(Einsum main.cpp)
